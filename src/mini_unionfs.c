@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <string.h>
+#include <unistd.h>
+#include <errno.h>
 
 struct mini_unionfs_state {
     char lower_dir[PATH_MAX];
@@ -18,6 +20,29 @@ static void build_path(char *buf, const char *dir, const char *path)
     snprintf(buf, PATH_MAX, "%s%s", dir, path);
 }
 
+static int resolve_path(const char *path, char *resolved_path)
+{
+    struct mini_unionfs_state *st = UNIONFS_DATA;
+
+    char upper[PATH_MAX];
+    char lower[PATH_MAX];
+
+    build_path(upper, st->upper_dir, path);
+    build_path(lower, st->lower_dir, path);
+
+    if (access(upper, F_OK) == 0) {
+        strcpy(resolved_path, upper);
+        return 0;
+    }
+
+    if (access(lower, F_OK) == 0) {
+        strcpy(resolved_path, lower);
+        return 0;
+    }
+
+    return -ENOENT;
+}
+
 int main(int argc, char *argv[])
 {
     if (argc < 4) {
@@ -26,10 +51,6 @@ int main(int argc, char *argv[])
     }
 
     struct mini_unionfs_state *state = malloc(sizeof(struct mini_unionfs_state));
-    if (!state) {
-        perror("malloc");
-        return 1;
-    }
 
     realpath(argv[1], state->lower_dir);
     realpath(argv[2], state->upper_dir);
