@@ -4,11 +4,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <string.h>
 
 struct mini_unionfs_state {
     char lower_dir[PATH_MAX];
     char upper_dir[PATH_MAX];
 };
+
+#define UNIONFS_DATA ((struct mini_unionfs_state *) fuse_get_context()->private_data)
+
+static void build_path(char *buf, const char *dir, const char *path)
+{
+    snprintf(buf, PATH_MAX, "%s%s", dir, path);
+}
 
 int main(int argc, char *argv[])
 {
@@ -23,7 +31,11 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("Lower: %s\nUpper: %s\nMount: %s\n", argv[1], argv[2], argv[3]);
+    realpath(argv[1], state->lower_dir);
+    realpath(argv[2], state->upper_dir);
+
+    argv[1] = argv[3];
+    argc = 2;
 
     return fuse_main(argc, argv, NULL, state);
 }
