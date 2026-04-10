@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 struct mini_unionfs_state {
     char lower_dir[PATH_MAX];
@@ -44,9 +45,6 @@ static int resolve_path(const char *path, char *resolved_path)
     return -ENOENT;
 }
 
-/* -----------------------------
-   getattr
------------------------------ */
 static int unionfs_getattr(const char *path, struct stat *stbuf,
                            struct fuse_file_info *fi)
 {
@@ -63,8 +61,44 @@ static int unionfs_getattr(const char *path, struct stat *stbuf,
     return 0;
 }
 
+/* -----------------------------
+   readdir (lower only)
+----------------------------- */
+static int unionfs_readdir(const char *path, void *buf,
+                           fuse_fill_dir_t filler, off_t offset,
+                           struct fuse_file_info *fi,
+                           enum fuse_readdir_flags flags)
+{
+    (void) offset;
+    (void) fi;
+    (void) flags;
+
+    struct mini_unionfs_state *st = UNIONFS_DATA;
+
+    DIR *dp;
+    struct dirent *de;
+
+    char lower[PATH_MAX];
+    build_path(lower, st->lower_dir, path);
+
+    dp = opendir(lower);
+    if (!dp)
+        return -errno;
+
+    filler(buf, ".", NULL, 0, 0);
+    filler(buf, "..", NULL, 0, 0);
+
+    while ((de = readdir(dp)) != NULL) {
+        filler(buf, de->d_name, NULL, 0, 0);
+    }
+
+    closedir(dp);
+    return 0;
+}
+
 static struct fuse_operations unionfs_oper = {
     .getattr = unionfs_getattr,
+    .readdir = unionfs_readdir,
 };
 
 int main(int argc, char *argv[])
