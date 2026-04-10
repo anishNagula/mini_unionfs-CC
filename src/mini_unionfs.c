@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 struct mini_unionfs_state {
     char lower_dir[PATH_MAX];
@@ -43,13 +44,31 @@ static int resolve_path(const char *path, char *resolved_path)
     return -ENOENT;
 }
 
+/* -----------------------------
+   getattr
+----------------------------- */
+static int unionfs_getattr(const char *path, struct stat *stbuf,
+                           struct fuse_file_info *fi)
+{
+    (void) fi;
+
+    char resolved[PATH_MAX];
+
+    if (resolve_path(path, resolved) != 0)
+        return -ENOENT;
+
+    if (lstat(resolved, stbuf) == -1)
+        return -errno;
+
+    return 0;
+}
+
+static struct fuse_operations unionfs_oper = {
+    .getattr = unionfs_getattr,
+};
+
 int main(int argc, char *argv[])
 {
-    if (argc < 4) {
-        fprintf(stderr, "Usage: %s <lower> <upper> <mount>\n", argv[0]);
-        return 1;
-    }
-
     struct mini_unionfs_state *state = malloc(sizeof(struct mini_unionfs_state));
 
     realpath(argv[1], state->lower_dir);
@@ -58,5 +77,5 @@ int main(int argc, char *argv[])
     argv[1] = argv[3];
     argc = 2;
 
-    return fuse_main(argc, argv, NULL, state);
+    return fuse_main(argc, argv, &unionfs_oper, state);
 }
