@@ -22,6 +22,7 @@ static void build_path(char *buf, const char *dir, const char *path)
     snprintf(buf, PATH_MAX, "%s%s", dir, path);
 }
 
+/* ---------- resolve ---------- */
 static int resolve_path(const char *path, char *resolved_path)
 {
     struct mini_unionfs_state *st = UNIONFS_DATA;
@@ -45,6 +46,7 @@ static int resolve_path(const char *path, char *resolved_path)
     return -ENOENT;
 }
 
+/* ---------- getattr ---------- */
 static int unionfs_getattr(const char *path, struct stat *stbuf,
                            struct fuse_file_info *fi)
 {
@@ -61,9 +63,7 @@ static int unionfs_getattr(const char *path, struct stat *stbuf,
     return 0;
 }
 
-/* -----------------------------
-   readdir (lower only)
------------------------------ */
+/* ---------- readdir merged ---------- */
 static int unionfs_readdir(const char *path, void *buf,
                            fuse_fill_dir_t filler, off_t offset,
                            struct fuse_file_info *fi,
@@ -78,21 +78,39 @@ static int unionfs_readdir(const char *path, void *buf,
     DIR *dp;
     struct dirent *de;
 
+    char upper[PATH_MAX];
     char lower[PATH_MAX];
-    build_path(lower, st->lower_dir, path);
 
-    dp = opendir(lower);
-    if (!dp)
-        return -errno;
+    build_path(upper, st->upper_dir, path);
+    build_path(lower, st->lower_dir, path);
 
     filler(buf, ".", NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
 
-    while ((de = readdir(dp)) != NULL) {
-        filler(buf, de->d_name, NULL, 0, 0);
+    /* upper first */
+    dp = opendir(upper);
+    if (dp) {
+        while ((de = readdir(dp)) != NULL)
+            filler(buf, de->d_name, NULL, 0, 0);
+        closedir(dp);
     }
 
-    closedir(dp);
+    /* lower only if not in upper */
+    dp = opendir(lower);
+    if (dp) {
+        while ((de = readdir(dp)) != NULL) {
+
+            char upper_check[PATH_MAX];
+            snprintf(upper_check, PATH_MAX, "%s/%s", upper, de->d_name);
+
+            if (access(upper_check, F_OK) == 0)
+                continue;
+
+            filler(buf, de->d_name, NULL, 0, 0);
+        }
+        closedir(dp);
+    }
+
     return 0;
 }
 
